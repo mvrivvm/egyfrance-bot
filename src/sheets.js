@@ -5,10 +5,15 @@ let sheetsClient = null;
 async function getSheetsClient() {
   if (sheetsClient) return sheetsClient;
 
-  const auth = new google.auth.GoogleAuth({
-    keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets']
-  });
+  const authOptions = { scopes: ['https://www.googleapis.com/auth/spreadsheets'] };
+
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    authOptions.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+  } else {
+    authOptions.keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  }
+
+  const auth = new google.auth.GoogleAuth(authOptions);
 
   const client = await auth.getClient();
   sheetsClient = google.sheets({ version: 'v4', auth: client });
