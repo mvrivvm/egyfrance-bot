@@ -1,12 +1,12 @@
 const OpenAI = require('openai');
 const { appendCustomerRow } = require('./sheets');
 
-// Using Google's Gemini models through their OpenAI-compatible endpoint,
-// so we can keep using the same `openai` SDK and function-calling code.
-// Get a free key at https://aistudio.google.com/apikey
+// Using Groq's OpenAI-compatible endpoint (genuinely free tier, no card
+// required), so we can keep using the same `openai` SDK and function-calling
+// code. Get a free key at https://console.groq.com/keys
 const openai = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1'
 });
 
 // Simple in-memory conversation store, keyed by customer phone number.
@@ -67,7 +67,7 @@ async function handleCustomerMessage(phone, incomingText) {
     ...getHistory(phone)
   ];
 
-  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
   let completion = await openai.chat.completions.create({
     model,
