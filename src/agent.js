@@ -1,11 +1,19 @@
 const OpenAI = require('openai');
 const { appendCustomerRow } = require('./sheets');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Using Google's Gemini models through their OpenAI-compatible endpoint,
+// so we can keep using the same `openai` SDK and function-calling code.
+// Get a free key at https://aistudio.google.com/apikey
+const openai = new OpenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+});
 
 // Simple in-memory conversation store, keyed by customer phone number.
 // Note: resets if the server restarts. Good enough for an MVP;
 // swap for a database/file store later if you need durability.
+const conversations = new Map();
+const MAX_HISTORY = 12; // keep last N messages per customer
 const conversations = new Map();
 const MAX_HISTORY = 12; // keep last N messages per customer
 
