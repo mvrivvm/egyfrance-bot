@@ -1,51 +1,33 @@
-const axios = require('axios');
+const twilio = require('twilio');
 
-const GRAPH_VERSION = 'v21.0';
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-function apiUrl() {
-  return `https://graph.facebook.com/${GRAPH_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+function toWhatsappAddress(rawNumber) {
+  if (!rawNumber) return rawNumber;
+  return rawNumber.startsWith('whatsapp:') ? rawNumber : `whatsapp:${rawNumber}`;
 }
 
 async function sendTextMessage(to, body) {
   try {
-    await axios.post(
-      apiUrl(),
-      {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    await client.messages.create({
+      from: toWhatsappAddress(process.env.TWILIO_WHATSAPP_NUMBER),
+      to: toWhatsappAddress(to),
+      body
+    });
   } catch (err) {
-    console.error('WhatsApp send error:', err.response?.data || err.message);
+    console.error('WhatsApp send error:', err.message);
     throw err;
   }
 }
 
-// Extracts the useful bits out of the raw webhook payload.
-// Returns null if this payload isn't an incoming user text message
-// (e.g. it's a status update like "delivered"/"read").
 function parseIncomingMessage(body) {
-  const entry = body?.entry?.[0];
-  const change = entry?.changes?.[0];
-  const value = change?.value;
-  const message = value?.messages?.[0];
+  if (!body?.From) return null;
 
-  if (!message) return null;
+  const from = body.From.replace('whatsapp:', '');
+  const text = body.Body || '';
+  const contactName = body.ProfileName || '';
 
-  const from = message.from; // customer phone number
-  const phoneNumberId = value.metadata?.phone_number_id;
-  const text = message.text?.body || '';
-  const contactName = value.contacts?.[0]?.profile?.name || '';
-
-  return { from, phoneNumberId, text, contactName };
+  return { from, text, contactName };
 }
 
 module.exports = { sendTextMessage, parseIncomingMessage };
