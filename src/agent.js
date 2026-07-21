@@ -14,8 +14,6 @@ const openai = new OpenAI({
 // swap for a database/file store later if you need durability.
 const conversations = new Map();
 const MAX_HISTORY = 12; // keep last N messages per customer
-const conversations = new Map();
-const MAX_HISTORY = 12; // keep last N messages per customer
 
 const SYSTEM_PROMPT = `انت مساعد مبيعات ذكي لمصنع "إيجي فرانس" لمنتجات صحة الدواجن.
 اتكلم باللهجة المصرية العامية بشكل ودود واحترافي، وردودك قصيرة ومباشرة (متطولش).
@@ -61,8 +59,6 @@ function pushHistory(phone, message) {
   while (history.length > MAX_HISTORY) history.shift();
 }
 
-// Runs one turn of the agent for a given customer phone number + incoming text.
-// Returns the text reply to send back over WhatsApp.
 async function handleCustomerMessage(phone, incomingText) {
   pushHistory(phone, { role: 'user', content: incomingText });
 
@@ -71,8 +67,8 @@ async function handleCustomerMessage(phone, incomingText) {
     ...getHistory(phone)
   ];
 
-const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-  
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+
   let completion = await openai.chat.completions.create({
     model,
     messages,
@@ -82,8 +78,6 @@ const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
   let responseMessage = completion.choices[0].message;
 
-  // If the model wants to call the logging tool, execute it, then ask
-  // the model to produce the final reply given the tool's result.
   if (responseMessage.tool_calls?.length) {
     messages.push(responseMessage);
 
