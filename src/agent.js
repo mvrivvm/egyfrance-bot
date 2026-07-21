@@ -71,8 +71,8 @@ async function handleCustomerMessage(phone, incomingText) {
     ...getHistory(phone)
   ];
 
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
+const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  
   let completion = await openai.chat.completions.create({
     model,
     messages,
