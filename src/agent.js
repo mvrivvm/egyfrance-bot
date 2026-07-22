@@ -1,13 +1,11 @@
 const OpenAI = require('openai');
 const { appendCustomerRow } = require('./sheets');
 
-// Using Groq's OpenAI-compatible endpoint
 const openai = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: 'https://api.groq.com/openai/v1'
 });
 
-// Simple in-memory conversation store
 const conversations = new Map();
 const MAX_HISTORY = 12;
 
@@ -27,27 +25,14 @@ const tools = [
     type: 'function',
     function: {
       name: 'log_customer',
-      description:
-        'يسجل بيانات العميل والمنتج المرشح له في شيت جوجل، لما تكتمل البيانات المطلوبة.',
+      description: 'يسجل بيانات العميل والمنتج المرشح له في شيت جوجل، لما تكتمل البيانات المطلوبة.',
       parameters: {
         type: 'object',
         properties: {
-          customer_name: {
-            type: 'string',
-            description: 'اسم العميل الكامل'
-          },
-          phone: {
-            type: 'string',
-            description: 'رقم موبايل العميل'
-          },
-          product: {
-            type: 'string',
-            description: 'باقة المنتج اللي اترشحت للعميل'
-          },
-          notes: {
-            type: 'string',
-            description: 'أي ملاحظات إضافية عن حالة العميل أو مزرعته'
-          }
+          customer_name: { type: 'string', description: 'اسم العميل الكامل' },
+          phone: { type: 'string', description: 'رقم موبايل العميل' },
+          product: { type: 'string', description: 'باقة المنتج اللي اترشحت للعميل' },
+          notes: { type: 'string', description: 'أي ملاحظات إضافية عن حالة العميل أو مزرعته' }
         },
         required: ['customer_name', 'phone', 'product']
       }
@@ -65,10 +50,7 @@ function getHistory(phone) {
 function pushHistory(phone, message) {
   const history = getHistory(phone);
   history.push(message);
-
-  while (history.length > MAX_HISTORY) {
-    history.shift();
-  }
+  while (history.length > MAX_HISTORY) history.shift();
 }
 
 async function completeWithRetry(model, messages) {
@@ -81,37 +63,23 @@ async function completeWithRetry(model, messages) {
         tool_choice: 'auto'
       });
     } catch (err) {
-      console.error(
-        `Tool-calling attempt ${attempt} failed:`,
-        err.message
-      );
+      console.error(`Tool-calling attempt ${attempt} failed:`, err.message);
     }
   }
 
   console.error('Falling back to a plain reply without tools for this turn.');
-
-  return await openai.chat.completions.create({
-    model,
-    messages
-  });
+  return openai.chat.completions.create({ model, messages });
 }
 
 async function handleCustomerMessage(phone, incomingText) {
-  pushHistory(phone, {
-    role: 'user',
-    content: incomingText
-  });
+  pushHistory(phone, { role: 'user', content: incomingText });
 
   const messages = [
-    {
-      role: 'system',
-      content: SYSTEM_PROMPT
-    },
+    { role: 'system', content: SYSTEM_PROMPT },
     ...getHistory(phone)
   ];
 
-  const model =
-    process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
   let completion = await completeWithRetry(model, messages);
 
@@ -122,15 +90,7 @@ async function handleCustomerMessage(phone, incomingText) {
 
     for (const toolCall of responseMessage.tool_calls) {
       if (toolCall.function.name === 'log_customer') {
-        let args;
-
-        try {
-          args = JSON.parse(toolCall.function.arguments);
-        } catch (err) {
-          console.error('Invalid tool arguments:', err.message);
-          continue;
-        }
-
+        const args = JSON.parse(toolCall.function.arguments);
         try {
           await appendCustomerRow({
             name: args.customer_name,
@@ -138,7 +98,6 @@ async function handleCustomerMessage(phone, incomingText) {
             product: args.product,
             notes: args.notes || ''
           });
-
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
@@ -146,12 +105,10 @@ async function handleCustomerMessage(phone, incomingText) {
           });
         } catch (err) {
           console.error('Sheets append failed:', err.message);
-
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content:
-              'حصل خطأ أثناء تسجيل البيانات، حاول تاني أو أبلغ العميل إننا هنتواصل معاه يدويًا.'
+            content: 'حصل خطأ أثناء تسجيل البيانات، حاول تاني أو أبلغ العميل إننا هنتواصل معاه يدويًا.'
           });
         }
       }
@@ -159,25 +116,15 @@ async function handleCustomerMessage(phone, incomingText) {
 
     completion = await openai.chat.completions.create({
       model,
-      messages,
-      tools,
-      tool_choice: 'auto'
+      messages
     });
-
     responseMessage = completion.choices[0].message;
   }
 
-  const replyText =
-    responseMessage.content || 'تمام، هل ممكن توضحلي أكتر؟';
-
-  pushHistory(phone, {
-    role: 'assistant',
-    content: replyText
-  });
+  const replyText = responseMessage.content || 'تمام، هل ممكن توضحلي أكتر؟';
+  pushHistory(phone, { role: 'assistant', content: replyText });
 
   return replyText;
 }
 
-module.exports = {
-  handleCustomerMessage
-};
+module.exports = { handleCustomerMessage };
