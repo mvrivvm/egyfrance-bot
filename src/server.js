@@ -23,6 +23,14 @@ app.post('/webhook', async (req, res) => {
     console.log(`Replied to ${from}: ${reply}`);
   } catch (err) {
     console.error('Error handling incoming webhook:', err.message);
+    try {
+      const parsed = parseIncomingMessage(req.body);
+      if (parsed?.from) {
+        await sendTextMessage(parsed.from, 'معلش حصل عندنا ضغط بسيط دلوقتي، ممكن تعيد رسالتك تاني؟ 🙏');
+      }
+    } catch (fallbackErr) {
+      console.error('Fallback reply also failed:', fallbackErr.message);
+    }
   }
 });
 
