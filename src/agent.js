@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const { appendCustomerRow } = require('./sheets');
+const { sendTextMessage } = require('./whatsapp');
 
 const openai = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
@@ -7,34 +8,63 @@ const openai = new OpenAI({
 });
 
 const conversations = new Map();
-const MAX_HISTORY = 12;
+const MAX_HISTORY = 14;
 
-const SYSTEM_PROMPT = `انت مساعد مبيعات ذكي لمصنع "إيجي فرانس" لمنتجات صحة الدواجن.
-اتكلم باللهجة المصرية العامية بشكل ودود واحترافي، وردودك قصيرة ومباشرة (متطولش).
-اسأل سؤال واحد بس في كل مرة.
+const INTRO_MESSAGE_1 = 'أهلاً بك في مصنع Egy France مع حضرتك د/ علا.. هسألك كام سؤال بسيط عشان أقدر أساعدك بأفضل شكل';
+const INTRO_MESSAGE_2 = 'اتشرف ب اسم حضرتك؟';
 
-هدفك بالترتيب:
-1. اتعرفي على اسم العميل.
-2. اعرفي رقم الموبايل بتاعه (لو مش واضح من الرقم اللي بيكلمك بيه، اسأليه يأكده).
-3. افهمي نوع المزرعة أو المشكلة اللي بيواجهها في الدواجن.
-4. رشحيله باقة منتج مناسبة من منتجات صحة الدواجن حسب احتياجه.
-5. لما تجمعي البيانات دي كلها (اسم + رقم + المنتج المرشح)، استخدمي أداة log_customer عشان تسجلي الطلب فورًا، وبعدها أكدي للعميل إن طلبه اتسجل وهيتم التواصل معاه.`;
+const PACKAGES_REFERENCE = `
+حزمة "اجهاد حراري":
+برنامج الاجهاد الحراري عبارة عن: كيلو فيتامين سي (جرعة وقت الفجر)، كيلو اليكتروفارم (جرعة من 9 ص)، نص لتر مينتومكس (بعدها بشوية)، كيلو ايجي برو (جرعة المغرب). نازل عليه عرض حاليًا المجموعة كاملة بـ 2650 ج 💚
+
+حزمة "IB":
+علاج الـ IB: نص كيلو ايجي مالتي باور، نص لتر مينتومكس، نص كيلو ايجي كوول. نازل عليه عرض حاليًا المجموعة كاملة بـ 2700 ج 💚
+
+حزمة "جمبورو":
+برنامج التعافي الفيروسي الخاص بالجمبورو عبارة عن: نص كيلو ايجي مالتي باور، نص كيلو ايجي كوول، كيلو اليكتروفارم. نازل عليه عرض حاليًا المجموعة كاملة بـ 3150 ج 💚
+`;
+
+const SYSTEM_PROMPT = `انت "د/ علا"، مندوب مبيعات في مصنع Egy France لمنتجات صحة الدواجن، بتتكلم مع عميل على واتساب.
+اتكلم باللهجة المصرية العامية، أسلوب ودود ومحترف، وردودك قصيرة (متطولش). اسأل سؤال واحد بس في كل رسالة.
+
+ملحوظة مهمة: أول رسالتين ترحيب (السلام والسؤال عن الاسم) اتبعتوا للعميل خلاص قبل ما تتدخل انت، فمتكررهمش. إنت بتكمل المحادثة من بعدهم.
+
+الترتيب اللي لازم تتبعه بالظبط:
+
+1. لو العميل لسه ما قالش اسمه (رد بحاجة تانية غير اسمه)، وضحله بأسلوب لبق إنك محتاج اسمه الأول عشان تقدر تساعده صح، واسأله تاني.
+
+2. **متسألش عن رقم الموبايل خالص** — رقم العميل معروف تلقائيًا من رقم الواتساب اللي بيكلمك بيه.
+
+3. بعد ما تاخد الاسم، اسأله: "حضرتك مربي ولا مكتب؟"
+
+4. لو قال "مربي": اسأله "بتربي في عدد كام يا فندم؟"
+   لو قال "مكتب": اسأله "مكتب حضرتك فين يا فندم؟"
+
+5. بعد كده اسأله: "حضرتك بخصوص ايه يا فندم؟" (يعني عايز يستفسر عن ايه بالظبط).
+
+6. لو ذكر واحدة من الحالات دي (اجهاد حراري / IB / جمبورو)، رد بنفس تفاصيل الباقة والسعر **حرفيًا زي ما هي تحت من غير أي تغيير في الأرقام أو المكونات أو السعر**:
+${PACKAGES_REFERENCE}
+   لو ذكر حالة تانية مش من التلاتة دي، اسأله يوضح أكتر أو قوله هتتواصل معاه فريق المبيعات بالتفاصيل.
+
+7. بعد ما تقدم الباقة المناسبة، استخدم أداة log_customer فورًا عشان تسجل بيانات العميل (الاسم، نوع النشاط: مربي/مكتب، التفصيلة: العدد أو مكان المكتب، الاستفسار، اسم الباقة والسعر)، وبعدها أكد للعميل إن طلبه اتسجل وهيتواصل معاه فريق المبيعات.`;
 
 const tools = [
   {
     type: 'function',
     function: {
       name: 'log_customer',
-      description: 'يسجل بيانات العميل والمنتج المرشح له في شيت جوجل، لما تكتمل البيانات المطلوبة.',
+      description: 'يسجل بيانات العميل والباقة المرشحة له في شيت جوجل، لما تكتمل البيانات المطلوبة.',
       parameters: {
         type: 'object',
         properties: {
-          customer_name: { type: 'string', description: 'اسم العميل الكامل' },
-          phone: { type: 'string', description: 'رقم موبايل العميل' },
-          product: { type: 'string', description: 'باقة المنتج اللي اترشحت للعميل' },
-          notes: { type: 'string', description: 'أي ملاحظات إضافية عن حالة العميل أو مزرعته' }
+          customer_name: { type: 'string', description: 'اسم العميل' },
+          farm_type: { type: 'string', description: 'مربي أو مكتب' },
+          farm_detail: { type: 'string', description: 'عدد الطيور لو مربي، أو موقع المكتب لو مكتب' },
+          inquiry: { type: 'string', description: 'موضوع الاستفسار (اجهاد حراري / IB / جمبورو / غيره)' },
+          product: { type: 'string', description: 'اسم الباقة المرشحة والسعر' },
+          notes: { type: 'string', description: 'أي ملاحظات إضافية' }
         },
-        required: ['customer_name', 'phone', 'product']
+        required: ['customer_name', 'farm_type', 'farm_detail', 'inquiry', 'product']
       }
     }
   }
@@ -72,6 +102,15 @@ async function completeWithRetry(model, messages) {
 }
 
 async function handleCustomerMessage(phone, incomingText) {
+  const isFirstContact = getHistory(phone).length === 0;
+
+  if (isFirstContact) {
+    await sendTextMessage(phone, INTRO_MESSAGE_1);
+    await sendTextMessage(phone, INTRO_MESSAGE_2);
+    pushHistory(phone, { role: 'assistant', content: `${INTRO_MESSAGE_1}\n${INTRO_MESSAGE_2}` });
+    return;
+  }
+
   pushHistory(phone, { role: 'user', content: incomingText });
 
   const messages = [
@@ -82,7 +121,6 @@ async function handleCustomerMessage(phone, incomingText) {
   const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
   let completion = await completeWithRetry(model, messages);
-
   let responseMessage = completion.choices[0].message;
 
   if (responseMessage.tool_calls?.length) {
@@ -94,8 +132,8 @@ async function handleCustomerMessage(phone, incomingText) {
         try {
           await appendCustomerRow({
             name: args.customer_name,
-            phone: args.phone,
-            product: args.product,
+            phone,
+            product: `${args.product} | ${args.farm_type}: ${args.farm_detail} | استفسار: ${args.inquiry}`,
             notes: args.notes || ''
           });
           messages.push({
@@ -114,17 +152,14 @@ async function handleCustomerMessage(phone, incomingText) {
       }
     }
 
-    completion = await openai.chat.completions.create({
-      model,
-      messages
-    });
+    completion = await openai.chat.completions.create({ model, messages });
     responseMessage = completion.choices[0].message;
   }
 
-  const replyText = responseMessage.content || 'تمام، هل ممكن توضحلي أكتر؟';
+  const replyText = responseMessage.content || 'تمام، ممكن توضحلي أكتر؟';
   pushHistory(phone, { role: 'assistant', content: replyText });
 
-  return replyText;
+  await sendTextMessage(phone, replyText);
 }
 
 module.exports = { handleCustomerMessage };
