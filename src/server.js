@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { sendTextMessage, parseIncomingMessage } = require('./whatsapp');
+const { parseIncomingMessage, sendTextMessage } = require('./whatsapp');
 const { handleCustomerMessage } = require('./agent');
 
 const app = express();
@@ -18,9 +18,7 @@ app.post('/webhook', async (req, res) => {
     const { from, text } = parsed;
     console.log(`Incoming from ${from}: ${text}`);
 
-    const reply = await handleCustomerMessage(from, text);
-    await sendTextMessage(from, reply);
-    console.log(`Replied to ${from}: ${reply}`);
+    await handleCustomerMessage(from, text);
   } catch (err) {
     console.error('Error handling incoming webhook:', err.message);
     try {
